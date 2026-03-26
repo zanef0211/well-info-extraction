@@ -40,6 +40,7 @@ storage/cache/*
 
 # IDE
 .vscode/
+.workbuddy/
 .idea/
 *.swp
 *.swo

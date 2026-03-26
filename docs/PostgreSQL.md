@@ -118,3 +118,17 @@ python -m pip install paddleocr
 # python -m pip install "paddleocr[all]"
 ```
 
+
+## 删除远程 git 仓库的文件
+```bash
+# .gitignore 增加 .workbuddy
+
+# 1. 从 Git 中移除 .workbuddy
+git rm -r --cached .workbuddy
+
+# 2. 提交
+git commit -m "chore: 清理 .workbuddy 目录"
+
+# 3. 推送
+git push origin master
+```
