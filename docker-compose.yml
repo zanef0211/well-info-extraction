@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # FastAPI 应用
+  app:
+    build: .
+    container_name: wellinfo-app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://wellinfo:wellinfo123@postgres:5432/wellinfo
+      - REDIS_URL=redis://redis:6379/0
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - DEBUG=false
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - wellinfo-network
+
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15
+    container_name: wellinfo-postgres
+    environment:
+      - POSTGRES_DB=wellinfo
+      - POSTGRES_USER=wellinfo
+      - POSTGRES_PASSWORD=wellinfo123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - wellinfo-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: wellinfo-redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - wellinfo-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  wellinfo-network:
+    driver: bridge
