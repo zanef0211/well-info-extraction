@@ -101,7 +101,7 @@ app.add_middleware(
 
 
 # 注册路由
-app.include_router(router, prefix="/api/v1", tags=["处理"])
+app.include_router(router, prefix=settings.API_PREFIX, tags=["处理"])
 
 
 @app.get("/", tags=["系统"])

@@ -1,8 +1,37 @@
 # API 接口设计文档
 
-> **文档版本**: v1.0
-> **创建日期**: 2026-03-25
+> **文档版本**: v1.2
+> **更新日期**: 2026-03-26
 > **项目路径**: d:/Workspaces/well-info-extraction/
+
+---
+
+## 变更说明
+
+**v1.2** (2026-03-26):
+- **API_PREFIX 改为包含项目名称**: 从 `/api/v1` 改为 `/wellie/api/v1`
+- **原因**: 避免多个项目部署在同一域名时的接口冲突
+- **影响**: 所有接口路径都增加了 `/wellie` 项目前缀
+- **示例**: `/wellie/api/v1/process/upload`, `/wellie/api/v1/query/well/{well_no}` 等
+
+**v1.1** (2026-03-26):
+- 更新接口路径,使用实际实现的路径
+- 修正单文档接口,改为 `POST /api/v1/process/upload` 支持文件上传
+- 更新批量接口路径为 `/api/v1/process/batch` (本地文件) 和 `/api/v1/process/batch/group` (上传文件并按井分组)
+- 新增验证接口: `POST /api/v1/validate` (验证数据) 和 `POST /api/v1/validate/summary` (获取验证摘要)
+- 新增质量检查接口: `POST /api/v1/quality/check` (检查数据质量)
+- 新增查询接口:
+  - `GET /api/v1/query/well/{well_no}` - 查询井完整信息
+  - `GET /api/v1/query/well/{well_no}/fields` - 查询井字段
+  - `GET /api/v1/query/well/{well_no}/documents` - 查询井文档
+  - `GET /api/v1/query/wells` - 查询井列表
+- 移除场景3 (单井批量资料处理),因为实际代码中未实现
+- 删除实现代码示例章节,保持文档聚焦于接口定义
+- 更新所有接口定义以匹配实际代码实现 (api/routes.py)
+- 调整章节编号,从十五章调整到十五章完整
+
+**v1.0** (2026-03-25):
+- 初始版本
 
 ---
 
@@ -74,42 +103,33 @@
 
 ---
 
-## 三、场景1: 单文档信息提取
+## 三、处理接口
 
-### 3.1 接口定义
+### 3.1 文件上传并处理
 
-**接口路径**: `POST /api/v1/extract/single`
+**接口路径**: `POST /wellie/api/v1/process/upload`
 
-**功能**: 上传单个文档,返回结构化抽取结果
+**功能**: 上传单个文档,自动保存并处理,返回结构化抽取结果
 
 ### 3.2 请求参数
 
-#### 方式1: 文件上传
-
 ```http
-POST /api/v1/extract/single
+POST /wellie/api/v1/process/upload
 Content-Type: multipart/form-data
 
-file: [文件]
+file: [文件]  // 必需
 target_fields: ["WellNo", "SpudDate", "TotalDepth"]  // 可选
-category: drilling  // 可选,一级分类
-doc_category: 钻井日报  // 可选,二级文档分类
 enhance_images: true  // 可选,默认true
 clean_text: true  // 可选,默认true
 ```
 
-#### 方式2: 文件路径
-
-```json
-{
-  "file_path": "/path/to/document.pdf",
-  "target_fields": ["WellNo", "SpudDate", "TotalDepth"],
-  "category": "drilling",
-  "doc_category": "钻井日报",
-  "enhance_images": true,
-  "clean_text": true
-}
-```
+**参数说明**:
+- `file`: 上传的文件(支持PDF、Word、Excel、TXT、图片)
+  - 支持扩展名: `.pdf`, `.docx`, `.doc`, `.xlsx`, `.xls`, `.txt`, `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`
+  - 文件大小限制: 100MB
+- `target_fields`: 目标字段列表,不传则提取所有字段
+- `enhance_images`: 是否对图像进行增强处理
+- `clean_text`: 是否对文本进行清洗
 
 **参数说明**:
 - `file`: 上传的文件(支持PDF、Word、Excel、PPT、TXT、图片)
@@ -121,6 +141,70 @@ clean_text: true  // 可选,默认true
 - `clean_text`: 是否对文本进行清洗
 
 ### 3.3 响应参数
+
+```json
+{
+  "success": true,
+  "message": "文件处理成功",
+  "data": {
+    "document_info": {
+      "document_id": "doc_20260326_001",
+      "filename": "drilling_report.pdf",
+      "file_size": 2048576,
+      "file_extension": ".pdf",
+      "mime_type": "application/pdf",
+      "document_type": "pdf",
+      "category": "drilling",
+      "doc_category": "钻井日报"
+    },
+    "well_info": {
+      "well_no": "TS1-1",
+      "well_no_confidence": 0.98,
+      "is_multi_well": false
+    },
+    "extracted_fields": {
+      "WellNo": {
+        "value": "TS1-1",
+        "confidence": 0.98,
+        "source": "文档标题",
+        "unit": null,
+        "validated": true
+      },
+      "SpudDate": {
+        "value": "2025-01-15",
+        "confidence": 0.95,
+        "source": "文档第2页",
+        "unit": null,
+        "validated": true
+      }
+    },
+    "validation_results": {
+      "total_fields": 21,
+      "valid_fields": 19,
+      "invalid_fields": 2,
+      "warnings": [],
+      "errors": []
+    },
+    "quality_metrics": {
+      "completeness": 0.90,
+      "accuracy": 0.93,
+      "confidence": 0.92,
+      "overall_score": 0.92
+    },
+    "processing_info": {
+      "processing_time_ms": 12500,
+      "stages": {
+        "preprocessing": 2000,
+        "classification": 500,
+        "well_extraction": 300,
+        "field_extraction": 8000,
+        "validation": 1000,
+        "postprocessing": 700
+      }
+    }
+  }
+}
+```
 
 ```json
 {
@@ -251,32 +335,15 @@ clean_text: true  // 可选,默认true
 
 ---
 
-## 四、场景2: 多文档批量信息提取
+## 四、批量处理接口
 
-### 4.1 接口定义
+### 4.1 批量处理文件(本地路径)
 
-**接口路径**: `POST /api/v1/extract/batch`
+**接口路径**: `POST /wellie/api/v1/process/batch`
 
-**功能**: 上传多个文档(可含多口井混合),返回按井分组结果
+**功能**: 批量处理本地文件路径列表,返回处理结果
 
 ### 4.2 请求参数
-
-#### 方式1: 文件上传
-
-```http
-POST /api/v1/extract/batch
-Content-Type: multipart/form-data
-
-files: [文件1, 文件2, ...]
-target_fields: ["WellNo", "SpudDate"]  // 可选
-category: drilling  // 可选
-doc_category: 钻井日报  // 可选
-group_by_well: true  // 可选,默认true,是否按井号分组
-enhance_images: true  // 可选
-clean_text: true  // 可选
-```
-
-#### 方式2: 文件路径
 
 ```json
 {
@@ -284,14 +351,13 @@ clean_text: true  // 可选
     "/path/to/doc1.pdf",
     "/path/to/doc2.pdf"
   ],
-  "target_fields": ["WellNo", "SpudDate"],
-  "category": "drilling",
-  "doc_category": "钻井日报",
-  "group_by_well": true,
-  "enhance_images": true,
-  "clean_text": true
+  "target_fields": ["WellNo", "SpudDate"]
 }
 ```
+
+**参数说明**:
+- `file_paths`: 本地文件路径列表(必需)
+- `target_fields`: 目标字段列表(可选)
 
 **参数说明**:
 - `files`: 上传的文件列表
@@ -308,111 +374,38 @@ clean_text: true  // 可选
 ```json
 {
   "success": true,
-  "message": "批量处理完成",
-  "timestamp": "2026-03-25T10:35:00Z",
-  "request_id": "req_20260325_103500_002",
-
-  "batch_info": {
-    "total_documents": 10,
-    "successful_documents": 8,
-    "partial_documents": 1,
-    "failed_documents": 1,
-    "total_wells": 3,
-    "unrecognized_wells": 0,
-    "processing_time_ms": 45000
-  },
-
-  "document_results": [
+  "message": "批量处理完成: 10 个文件",
+  "data": [
     {
-      "document_id": "doc_20260325_001",
-      "filename": "drilling_report.pdf",
-      "status": "success",
-      "well_no": "TS1-1",
-      "category": "drilling",
-      "category_name": "钻井资料",
-      "doc_category": "钻井日报",
+      "document_info": {
+        "document_id": "doc_20260326_001",
+        "filename": "drilling_report.pdf",
+        "file_size": 2048576
+      },
+      "well_info": {
+        "well_no": "TS1-1",
+        "well_no_confidence": 0.98
+      },
       "extracted_fields": {
         "WellNo": {
           "value": "TS1-1",
           "confidence": 0.98,
-          "source": "文档标题",
-          "unit": null,
-          "validated": true
+          "source": "文档标题"
         }
-        // ... 其他字段
       },
       "quality_metrics": {
         "completeness": 0.90,
         "accuracy": 0.93,
-        "confidence": 0.92,
         "overall_score": 0.92
-      },
-      "processing_time_ms": 12000
+      }
     }
-    // ... 其他文档结果
   ],
-
-  "well_groups": {
-    "TS1-1": {
-      "well_info": {
-        "well_no": "TS1-1",
-        "document_count": 5,
-        "categories": ["drilling", "mudlogging", "wireline"],
-        "avg_confidence": 0.91
-      },
-      "documents": [
-        {
-          "document_id": "doc_20260325_001",
-          "filename": "drilling_report.pdf",
-          "category": "drilling",
-          "doc_category": "钻井日报",
-          "extracted_fields": { /* ... */ },
-          "quality_metrics": { /* ... */ }
-        }
-        // ... 该井的其他文档
-      ]
-    },
-    "HZ21-3": {
-      "well_info": {
-        "well_no": "HZ21-3",
-        "document_count": 3,
-        "categories": ["drilling", "completion"],
-        "avg_confidence": 0.89
-      },
-      "documents": [ /* ... */ ]
-    }
-    // ... 其他井
-  },
-
   "summary": {
-    "by_category": {
-      "drilling": {
-        "count": 4,
-        "avg_confidence": 0.92,
-        "avg_quality": 0.91
-      },
-      "mudlogging": {
-        "count": 2,
-        "avg_confidence": 0.90,
-        "avg_quality": 0.89
-      }
-      // ... 其他分类统计
-    },
-    "by_well": [
-      {
-        "well_no": "TS1-1",
-        "document_count": 5,
-        "categories": ["drilling", "mudlogging", "wireline"],
-        "avg_confidence": 0.91,
-        "avg_quality": 0.90
-      }
-      // ... 其他井统计
-    ],
-    "overall": {
-      "avg_confidence": 0.91,
-      "avg_quality": 0.90,
-      "processing_speed": "13.3 docs/minute"
-    }
+    "total_files": 10,
+    "successful": 8,
+    "failed": 2,
+    "avg_confidence": 0.91,
+    "avg_quality_score": 0.90
   }
 }
 ```
@@ -443,244 +436,553 @@ clean_text: true  // 可选
 
 ---
 
-## 五、场景3: 单口井批量资料处理
+## 五、批量处理并按井分组
 
 ### 5.1 接口定义
 
-**接口路径**: `POST /api/v1/extract/single-well-batch`
+**接口路径**: `POST /wellie/api/v1/process/batch/group`
 
-**功能**: 批量上传单口井的全部资料,返回该井的完整信息汇总
+**功能**: 批量上传文件,自动识别井号并按井号分组返回结果
 
 ### 5.2 请求参数
 
 ```http
-POST /api/v1/extract/single-well-batch
+POST /wellie/api/v1/process/batch/group
 Content-Type: multipart/form-data
 
-files: [文件1, 文件2, ...]
-well_no: TS1-1  // 可选,提供可提高准确性
-target_categories: ["drilling", "mudlogging", "wireline"]  // 可选
-target_fields: ["WellNo", "SpudDate", "TotalDepth"]  // 可选
-enhance_images: true  // 可选
-clean_text: true  // 可选
+files: [文件1, 文件2, ...]  // 必需
 ```
 
-或
-
-```json
-{
-  "file_paths": [
-    "/path/to/doc1.pdf",
-    "/path/to/doc2.pdf"
-  ],
-  "well_no": "TS1-1",
-  "target_categories": ["drilling", "mudlogging", "wireline"],
-  "target_fields": ["WellNo", "SpudDate", "TotalDepth"],
-  "enhance_images": true,
-  "clean_text": true
-}
-```
-
-**参数说明**:
-- `files`: 上传的文件列表
-- `file_paths`: 服务器本地文件路径列表
-- `well_no`: 井号(可选,提供可提高准确性)
-- `target_categories`: 目标分类列表
-- `target_fields`: 目标字段列表
-- `enhance_images`: 是否增强图像
-- `clean_text`: 是否清洗文本
+**功能说明**:
+1. 批量上传文件
+2. 识别每份文件的井号
+3. 按井号分组
+4. 返回按井号组织的文档结构
 
 ### 5.3 响应参数
 
 ```json
 {
   "success": true,
-  "message": "单井资料处理完成",
-  "timestamp": "2026-03-25T10:40:00Z",
-  "request_id": "req_20260325_104000_003",
-
-  "well_info": {
-    "well_no": "TS1-1",
-    "well_no_confidence": 0.99,
-    "document_count": 10,
-    "categories": ["basic", "drilling", "mudlogging", "wireline", "testing", "completion"],
-    "avg_confidence": 0.92
-  },
-
-  "document_results": [
-    {
-      "document_id": "doc_20260325_001",
-      "filename": "drilling_design.pdf",
-      "category": "drilling",
-      "category_name": "钻井资料",
-      "doc_category": "钻井设计",
-      "status": "success",
-      "extracted_fields": {
-        "WellNo": {
-          "value": "TS1-1",
-          "confidence": 0.98,
-          "source": "文档标题",
-          "unit": null,
-          "validated": true
-        }
-        // ... 其他字段
-      },
-      "quality_metrics": {
-        "completeness": 0.95,
-        "accuracy": 0.94,
-        "confidence": 0.93,
-        "overall_score": 0.94
-      }
-    }
-    // ... 其他文档
-  ],
-
-  "merged_fields": {
-    "basic": {
-      "WellNo": {
-        "value": "TS1-1",
-        "confidence": 0.99,
-        "sources": [
-          {
-            "document_id": "doc_20260325_001",
+  "message": "处理完成: 3 口井, 10 份文档",
+  "total_files": 10,
+  "unique_wells": 3,
+  "unrecognized_files": 1,
+  "well_groups": {
+    "TS1-1": [
+      {
+        "document_id": "doc_20260326_001",
+        "original_filename": "drilling_report.pdf",
+        "well_no": "TS1-1",
+        "extracted_fields": {
+          "WellNo": {
             "value": "TS1-1",
             "confidence": 0.98
           }
-        ],
-        "unit": null,
-        "validated": true
+        }
       },
-      "SpudDate": {
-        "value": "2025-01-15",
-        "confidence": 0.96,
-        "sources": [
-          {
-            "document_id": "doc_20260325_001",
-            "value": "2025-01-15",
+      {
+        "document_id": "doc_20260326_002",
+        "original_filename": "well_design.pdf",
+        "well_no": "TS1-1",
+        "extracted_fields": {
+          "WellNo": {
+            "value": "TS1-1",
             "confidence": 0.95
-          },
-          {
-            "document_id": "doc_20260325_002",
-            "value": "2025-01-15",
-            "confidence": 0.97
           }
-        ],
-        "unit": null,
-        "validated": true
+        }
       }
-      // ... 其他basic字段
-    },
-    "drilling": {
-      "RigModel": {
-        "value": "ZJ50DB",
-        "confidence": 0.92,
-        "sources": [
-          {
-            "document_id": "doc_20260325_001",
-            "value": "ZJ50DB",
+    ],
+    "HZ21-3": [
+      {
+        "document_id": "doc_20260326_003",
+        "original_filename": "hz21_report.pdf",
+        "well_no": "HZ21-3",
+        "extracted_fields": {
+          "WellNo": {
+            "value": "HZ21-3",
             "confidence": 0.92
           }
-        ],
-        "unit": null,
-        "validated": true
+        }
       }
-      // ... 其他drilling字段
-    }
-    // ... 其他分类的字段
-  },
-
-  "quality_summary": {
-    "overall_quality": 0.93,
-    "by_category": {
-      "basic": {
-        "completeness": 1.0,
-        "accuracy": 0.98,
-        "confidence": 0.97
-      },
-      "drilling": {
-        "completeness": 0.95,
-        "accuracy": 0.94,
-        "confidence": 0.93
-      }
-      // ... 其他分类
-    },
-    "issues": [
+    ],
+    "未识别": [
       {
-        "category": "testing",
-        "field": "OilRate",
-        "issue": "文档中该字段缺失",
-        "severity": "warning"
+        "document_id": "doc_20260326_010",
+        "original_filename": "unknown.pdf",
+        "well_no": null,
+        "extracted_fields": {}
       }
     ]
-  },
-
-  "validation_summary": {
-    "total_fields": 167,
-    "valid_fields": 155,
-    "invalid_fields": 8,
-    "missing_fields": 4,
-    "warnings": 12,
-    "errors": 3,
-    "validation_rate": 0.93
-  },
-
-  "export_data": {
-    "json_url": "/api/v1/export/doc_20260325_003.json",
-    "excel_url": "/api/v1/export/doc_20260325_003.xlsx",
-    "database_ready": true
-  },
-
-  "processing_info": {
-    "total_time_ms": 38000,
-    "avg_time_per_doc_ms": 3800,
-    "stages": {
-      "preprocessing": 5000,
-      "classification": 2000,
-      "well_extraction": 1500,
-      "field_extraction": 25000,
-      "merging": 3000,
-      "validation": 1500
-    }
   }
 }
 ```
 
 **响应字段说明**:
-
-#### well_info(井信息)
-- `well_no`: 井号
-- `well_no_confidence`: 井号置信度
-- `document_count`: 文档数量
-- `categories`: 涉及的分类列表
-- `avg_confidence`: 平均置信度
-
-#### document_results(文档结果列表)
-- 各文档的处理结果
-
-#### merged_fields(合并字段)
-- 按分类组织的合并字段
-- 每个字段包含多个来源的值和置信度
-- 系统会选择置信度最高的值作为合并结果
-
-#### quality_summary(质量汇总)
-- `overall_quality`: 总体质量评分
-- `by_category`: 各分类质量评分
-- `issues`: 问题列表
-
-#### validation_summary(校验汇总)
-- 各类校验统计
-
-#### export_data(导出数据)
-- 各格式导出链接
-- `database_ready`: 是否可以入库
+- `total_files`: 总文件数
+- `unique_wells`: 识别到的井数(不包括未识别)
+- `unrecognized_files`: 未识别井号的文件数
+- `well_groups`: 按井号分组的文档列表
+  - 键名: 井号或"未识别"
+  - 值: 该井的所有文档处理结果
 
 ---
 
-## 六、辅助接口
+## 六、验证接口
 
-### 6.1 健康检查
+### 6.1 验证数据
 
-**接口路径**: `GET /api/v1/health`
+**接口路径**: `POST /wellie/api/v1/validate`
+
+**功能**: 验证提取的字段数据,返回每个字段的验证结果
+
+### 6.2 请求参数
+
+```json
+{
+  "data": {
+    "WellNo": "TS1-1",
+    "TotalDepth": 5230.5,
+    "SpudDate": "2025-01-15"
+  },
+  "document_type": "drilling"
+}
+```
+
+**参数说明**:
+- `data`: 要验证的字段数据
+- `document_type`: 文档类型,决定使用的验证规则
+
+### 6.3 响应参数
+
+```json
+[
+  {
+    "field_name": "WellNo",
+    "is_valid": true,
+    "errors": [],
+    "warnings": [],
+    "confidence": 0.98
+  },
+  {
+    "field_name": "TotalDepth",
+    "is_valid": true,
+    "errors": [],
+    "warnings": ["深度值较大,建议确认"],
+    "confidence": 0.95
+  },
+  {
+    "field_name": "SpudDate",
+    "is_valid": false,
+    "errors": ["日期格式错误"],
+    "warnings": [],
+    "confidence": 0.5
+  }
+]
+```
+
+### 6.4 获取验证摘要
+
+**接口路径**: `POST /wellie/api/v1/validate/summary`
+
+**功能**: 获取批量验证的摘要统计信息
+
+### 6.5 请求参数
+
+与验证接口相同,使用相同的请求参数
+
+### 6.6 响应参数
+
+```json
+{
+  "total_fields": 167,
+  "valid_fields": 155,
+  "invalid_fields": 8,
+  "total_errors": 12,
+  "total_warnings": 25,
+  "validation_rate": 0.93,
+  "avg_confidence": 0.91,
+  "problem_fields": [
+    {
+      "field_name": "OilRate",
+      "error_count": 5,
+      "warning_count": 8
+    }
+  ]
+}
+```
+
+---
+
+## 七、质量检查接口
+
+### 7.1 检查数据质量
+
+**接口路径**: `POST /wellie/api/v1/quality/check`
+
+**功能**: 检查文档提取数据的综合质量指标
+
+### 7.2 请求参数
+
+```json
+{
+  "document_id": "doc_20260326_001",
+  "extracted_data": {
+    "WellNo": "TS1-1",
+    "TotalDepth": 5230.5
+  },
+  "target_fields": ["WellNo", "TotalDepth", "SpudDate"],
+  "metadata": {
+    "category": "drilling",
+    "document_type": "drilling_report"
+  }
+}
+```
+
+### 7.3 响应参数
+
+```json
+{
+  "document_id": "doc_20260326_001",
+  "metrics": {
+    "completeness": 0.90,
+    "accuracy": 0.93,
+    "consistency": 0.95,
+    "confidence": 0.92,
+    "overall_score": 0.92
+  },
+  "issues": [
+    {
+      "field": "SpudDate",
+      "type": "missing",
+      "severity": "warning",
+      "message": "字段缺失"
+    }
+  ],
+  "suggestions": [
+    "建议补充缺失的字段以提高完整性",
+    "建议人工复核低置信度字段"
+  ],
+  "validated_at": "2026-03-26T10:30:00Z"
+}
+```
+
+---
+
+## 八、查询接口
+
+### 8.1 按井号查询完整信息
+
+**接口路径**: `GET /wellie/api/v1/query/well/{well_no}`
+
+**功能**: 查询指定井号的完整信息,包括井信息、文档、提取字段、质量报告等
+
+### 8.2 请求参数
+
+```
+GET /wellie/api/v1/query/well/TS1-1
+```
+
+**路径参数**:
+- `well_no`: 井号,如 "TS1-1"
+
+### 8.3 响应参数
+
+```json
+{
+  "success": true,
+  "message": "查询成功",
+  "data": {
+    "well_info": {
+      "well_no": "TS1-1",
+      "well_name": "台南1-1井",
+      "oilfield": "台南油田",
+      "block": "台南区块",
+      "well_type": "生产井",
+      "well_pattern": "直井",
+      "well_class": "一类井",
+      "latitude": 39.123,
+      "longitude": 117.456,
+      "elevation": 50.0,
+      "ground_elevation": 45.0,
+      "drill_date": "2025-01-15",
+      "completion_date": "2025-03-20",
+      "status": "active",
+      "created_at": "2026-03-20T10:00:00Z",
+      "updated_at": "2026-03-26T10:00:00Z"
+    },
+    "documents": [
+      {
+        "id": 1,
+        "document_id": "doc_20260326_001",
+        "filename": "drilling_report.pdf",
+        "file_path": "/storage/uploads/drilling_report.pdf",
+        "file_size": 2048576,
+        "file_extension": ".pdf",
+        "mime_type": "application/pdf",
+        "document_type": "pdf",
+        "category": "drilling",
+        "doc_category": "钻井日报",
+        "upload_date": "2026-03-26T10:00:00Z",
+        "uploaded_by": "admin",
+        "status": "success",
+        "created_at": "2026-03-26T10:00:00Z"
+      }
+    ],
+    "extracted_fields": [
+      {
+        "id": 1,
+        "document_id": "doc_20260326_001",
+        "well_no": "TS1-1",
+        "field_name": "WellNo",
+        "field_value": "TS1-1",
+        "field_type": "string",
+        "confidence": 0.98,
+        "is_valid": true,
+        "validation_errors": [],
+        "source": "文档标题",
+        "created_at": "2026-03-26T10:05:00Z"
+      }
+    ],
+    "quality_reports": [
+      {
+        "id": 1,
+        "document_id": "doc_20260326_001",
+        "well_no": "TS1-1",
+        "completeness": 0.90,
+        "accuracy": 0.93,
+        "consistency": 0.95,
+        "confidence": 0.92,
+        "overall_score": 0.92,
+        "quality_level": "good",
+        "issues": [],
+        "suggestions": [],
+        "validated_at": "2026-03-26T10:10:00Z"
+      }
+    ],
+    "processing_logs": [
+      {
+        "id": 1,
+        "document_id": "doc_20260326_001",
+        "well_no": "TS1-1",
+        "stage": "preprocessing",
+        "status": "completed",
+        "duration_ms": 2000,
+        "message": "预处理完成",
+        "error_message": null,
+        "log_metadata": {},
+        "created_at": "2026-03-26T10:02:00Z"
+      }
+    ],
+    "summary": {
+      "total_documents": 10,
+      "total_fields": 167,
+      "valid_fields": 155,
+      "avg_confidence": 0.91,
+      "avg_quality_score": 0.92,
+      "document_status_counts": {
+        "pending": 0,
+        "processing": 0,
+        "success": 10,
+        "failed": 0
+      }
+    }
+  }
+}
+```
+
+### 8.4 按井号查询字段
+
+**接口路径**: `GET /wellie/api/v1/query/well/{well_no}/fields`
+
+**功能**: 查询指定井号提取的字段数据,支持字段筛选
+
+### 8.5 请求参数
+
+```
+GET /wellie/api/v1/query/well/TS1-1/fields?field_names=WellNo,RigModel,TotalDepth&include_invalid=false
+```
+
+**路径参数**:
+- `well_no`: 井号
+
+**查询参数**:
+- `field_names`: 可选,字段名称列表(逗号分隔)
+- `include_invalid`: 可选,是否包含无效字段,默认false
+
+### 8.6 响应参数
+
+```json
+{
+  "success": true,
+  "message": "查询到 3 个字段",
+  "data": {
+    "well_no": "TS1-1",
+    "total_fields": 3,
+    "total_values": 5,
+    "fields": [
+      {
+        "field_name": "WellNo",
+        "values": [
+          {
+            "value": "TS1-1",
+            "document_id": "doc_20260326_001",
+            "confidence": 0.98,
+            "is_valid": true,
+            "source": "文档标题",
+            "created_at": "2026-03-26T10:05:00Z"
+          }
+        ]
+      },
+      {
+        "field_name": "RigModel",
+        "values": [
+          {
+            "value": "ZJ50DB",
+            "document_id": "doc_20260326_001",
+            "confidence": 0.85,
+            "is_valid": true,
+            "source": "文档第1页",
+            "created_at": "2026-03-26T10:05:00Z"
+          }
+        ]
+      },
+      {
+        "field_name": "TotalDepth",
+        "values": [
+          {
+            "value": 5230.5,
+            "document_id": "doc_20260326_001",
+            "confidence": 0.92,
+            "is_valid": true,
+            "source": "文档第3页表格",
+            "created_at": "2026-03-26T10:05:00Z"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 8.7 按井号查询文档
+
+**接口路径**: `GET /wellie/api/v1/query/well/{well_no}/documents`
+
+**功能**: 查询指定井号关联的所有文档,支持分类和状态筛选
+
+### 8.8 请求参数
+
+```
+GET /wellie/api/v1/query/well/TS1-1/documents?category=drilling&status=success
+```
+
+**路径参数**:
+- `well_no`: 井号
+
+**查询参数**:
+- `category`: 可选,一级分类筛选
+- `status`: 可选,状态筛选
+
+### 8.9 响应参数
+
+```json
+{
+  "success": true,
+  "message": "查询到 5 份文档",
+  "data": {
+    "well_no": "TS1-1",
+    "documents": [
+      {
+        "id": 1,
+        "document_id": "doc_20260326_001",
+        "filename": "drilling_report.pdf",
+        "file_path": "/storage/uploads/drilling_report.pdf",
+        "file_size": 2048576,
+        "file_extension": ".pdf",
+        "document_type": "pdf",
+        "category": "drilling",
+        "doc_category": "钻井日报",
+        "upload_date": "2026-03-26T10:00:00Z",
+        "status": "success",
+        "created_at": "2026-03-26T10:00:00Z"
+      }
+    ],
+    "summary": {
+      "total_documents": 5,
+      "by_category": {
+        "drilling": 3,
+        "mudlogging": 1,
+        "wireline": 1
+      },
+      "by_status": {
+        "success": 5
+      },
+      "total_fields": 50
+    }
+  }
+}
+```
+
+### 8.10 查询井列表
+
+**接口路径**: `GET /wellie/api/v1/query/wells`
+
+**功能**: 查询井列表,支持多条件筛选和分页
+
+### 8.11 请求参数
+
+```
+GET /wellie/api/v1/query/wells?oilfield=台南油田&block=台南区块&well_type=生产井&status=active&limit=10&skip=0
+```
+
+**查询参数**:
+- `oilfield`: 可选,油田筛选
+- `block`: 可选,区块筛选
+- `well_type`: 可选,井别筛选
+- `status`: 可选,状态筛选,默认active
+- `limit`: 可选,返回数量限制,默认100
+- `skip`: 可选,跳过数量,默认0
+
+### 8.12 响应参数
+
+```json
+{
+  "success": true,
+  "message": "查询到 10 口井",
+  "data": {
+    "total": 10,
+    "limit": 10,
+    "skip": 0,
+    "wells": [
+      {
+        "well_no": "TS1-1",
+        "well_name": "台南1-1井",
+        "oilfield": "台南油田",
+        "block": "台南区块",
+        "well_type": "生产井",
+        "well_pattern": "直井",
+        "well_class": "一类井",
+        "drill_date": "2025-01-15",
+        "completion_date": "2025-03-20",
+        "status": "active",
+        "document_count": 10,
+        "created_at": "2026-03-20T10:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 十、辅助接口
+
+### 10.1 健康检查
+
+**接口路径**: `GET /wellie/health` (待实现)
+
+**功能**: 检查服务健康状态
 
 **响应**:
 ```json
@@ -688,89 +990,13 @@ clean_text: true  // 可选
   "status": "ok",
   "service": "wellinfo-extractor",
   "version": "1.0.0",
-  "timestamp": "2026-03-25T10:00:00Z"
-}
-```
-
-### 6.2 文档分类查询
-
-**接口路径**: `GET /api/v1/categories`
-
-**响应**:
-```json
-{
-  "categories": {
-    "basic": {
-      "name": "基本信息",
-      "doc_categories": ["井位信息", "基础数据"]
-    },
-    "drilling": {
-      "name": "钻井资料",
-      "doc_categories": ["钻井设计", "完井设计", "钻井日报", "钻井总结"]
-    },
-    "mudlogging": {
-      "name": "录井资料",
-      "doc_categories": ["录井设计", "录井日报", "录井总结"]
-    },
-    "wireline": {
-      "name": "测井资料",
-      "doc_categories": ["测井设计", "测井解释报告", "测井成果图"]
-    },
-    "testing": {
-      "name": "试油测试资料",
-      "doc_categories": ["试油设计", "试油日报", "试油总结"]
-    },
-    "completion": {
-      "name": "完井资料",
-      "doc_categories": ["完井设计", "完井总结"]
-    },
-    "geology": {
-      "name": "地质资料",
-      "doc_categories": ["地质设计", "地质总结"]
-    },
-    "production": {
-      "name": "生产资料",
-      "doc_categories": ["生产日报", "月报", "年报"]
-    }
-  }
-}
-```
-
-### 6.3 字段库查询
-
-**接口路径**: `GET /api/v1/fields?category={category}`
-
-**请求参数**:
-- `category`: 分类代码(可选,不传则返回所有字段)
-
-**响应**:
-```json
-{
-  "category": "drilling",
-  "fields": [
-    {
-      "name": "RigModel",
-      "display_name": "钻机型号",
-      "type": "string",
-      "required": false,
-      "description": "使用的钻机型号"
-    },
-    {
-      "name": "TotalDepth",
-      "display_name": "完钻井深",
-      "type": "float",
-      "required": true,
-      "unit": "米",
-      "description": "完钻时的井深"
-    }
-    // ... 其他字段
-  ]
+  "timestamp": "2026-03-26T10:00:00Z"
 }
 ```
 
 ---
 
-## 七、错误处理
+## 十一、错误处理
 
 ### 7.1 错误响应格式
 
@@ -806,9 +1032,7 @@ clean_text: true  // 可选
 
 ---
 
-## 八、接口版本管理
-
-### 8.1 版本策略
+## 十二、接口版本管理
 
 - 主版本号(v1)在`/api/v{version}`路径中体现
 - 兼容性变更: 增加新字段、新接口
@@ -823,7 +1047,7 @@ clean_text: true  // 可选
 
 ---
 
-## 九、性能指标
+## 十三、性能指标
 
 ### 9.1 响应时间
 
@@ -845,7 +1069,7 @@ clean_text: true  // 可选
 
 ---
 
-## 十、安全规范
+## 十四、安全规范
 
 ### 10.1 认证授权
 
@@ -868,447 +1092,7 @@ clean_text: true  // 可选
 
 ---
 
-## 十一、实现代码
-
-### 11.1 Schema定义 (schemas/models.py)
-
-基于字段库(`config.field_schemas`)的Pydantic模型,实现双向校验:
-
-```python
-from typing import Optional, List, Any, Dict, Literal
-from pydantic import BaseModel, Field, validator, root_validator
-from datetime import datetime
-
-from config.field_schemas import FIELD_SCHEMAS
-
-
-class BaseProcessRequest(BaseModel):
-    """基础处理请求 - 所有处理接口的通用参数"""
-    target_fields: Optional[List[str]] = Field(None, description="目标字段列表")
-    category: Optional[Literal["basic", "drilling", "mudlogging", ...]] = Field(None)
-    doc_category: Optional[str] = Field(None)
-    enhance_images: bool = Field(True)
-    clean_text: bool = Field(True)
-
-    @validator('category')
-    def validate_category(cls, v):
-        """校验分类是否在字段库中"""
-        if v is not None and v not in FIELD_SCHEMAS.CATEGORY_MAP:
-            raise ValueError(f"无效的分类: {v}")
-        return v
-
-    @validator('doc_category')
-    def validate_doc_category(cls, v, values):
-        """校验二级分类是否与一级分类匹配"""
-        if v is not None and 'category' in values:
-            doc_categories = FIELD_SCHEMAS.DOC_CATEGORIES.get(values['category'], [])
-            if v not in doc_categories:
-                raise ValueError(f"二级分类'{v}'不属于一级分类'{values['category']}'")
-        return v
-
-    @validator('target_fields')
-    def validate_target_fields(cls, v, values):
-        """校验目标字段是否在字段库中"""
-        if v is not None and 'category' in values:
-            valid_fields = FIELD_SCHEMAS.get_field_names(values['category'])
-            invalid_fields = [f for f in v if f not in valid_fields]
-            if invalid_fields:
-                raise ValueError(f"无效的字段: {invalid_fields}")
-        return v
-
-
-class ProcessingResponse(BaseResponse):
-    """单文档处理响应"""
-    document_info: Optional[DocumentInfo]
-    well_info: Optional[WellInfo]
-    extracted_fields: Dict[str, FieldExtractionResult]
-
-    @validator('extracted_fields')
-    def validate_extracted_fields(cls, v, values):
-        """校验提取的字段是否符合字段库定义"""
-        if 'document_info' in values and values['document_info'].category:
-            category = values['document_info'].category
-            valid_fields = FIELD_SCHEMAS.get_field_names(category)
-            invalid_fields = [f for f in v.keys() if f not in valid_fields]
-            if invalid_fields:
-                raise ValueError(f"提取了无效字段: {invalid_fields}")
-        return v
-```
-
-### 11.2 API路由实现 (api/routes.py)
-
-```python
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
-from typing import List
-import json
-from pathlib import Path
-
-from schemas.models import (
-    ProcessRequest, BatchProcessRequest, SingleWellBatchRequest,
-    ProcessingResponse, BatchProcessingResponse, SingleWellBatchResponse
-)
-from config.settings import settings
-from preprocess.file_handler import FileHandler
-from validation.field_validator import FieldValidator
-
-router = APIRouter()
-
-
-def get_pipeline():
-    """获取处理管道实例"""
-    from api.app import pipeline_instance
-    if pipeline_instance is None:
-        raise HTTPException(status_code=503, detail="服务正在初始化")
-    return pipeline_instance
-
-
-# ========== 场景1: 单文档信息提取 ==========
-
-@router.post("/extract/single", response_model=ProcessingResponse)
-async def extract_single_document(
-    file: UploadFile = File(...),
-    target_fields: str = Form(None),
-    category: str = Form(None),
-    doc_category: str = Form(None),
-    enhance_images: bool = Form(True),
-    clean_text: bool = Form(True),
-    pipeline = Depends(get_pipeline)
-):
-    """
-    单文档信息提取
-
-    场景1: 单口井批量资料一键入库
-    上传单个文档,返回结构化抽取结果
-    """
-    try:
-        # 1. 解析目标字段
-        target_fields_list = None
-        if target_fields:
-            try:
-                target_fields_list = json.loads(target_fields)
-            except json.JSONDecodeError:
-                raise HTTPException(400, "target_fields格式错误")
-
-        # 2. 校验文件类型
-        file_ext = Path(file.filename).suffix.lower()
-        allowed_extensions = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".txt"}
-        if file_ext not in allowed_extensions:
-            raise HTTPException(400, f"不支持的文件类型: {file_ext}")
-
-        # 3. 验证分类(双向校验: 请求参数 ↔ 字段库)
-        if category and category not in FIELD_SCHEMAS.CATEGORY_MAP:
-            raise HTTPException(400, f"无效的分类: {category}")
-
-        # 4. 保存并处理文件
-        file_handler = FileHandler(
-            upload_dir=settings.STORAGE_UPLOAD_DIR,
-            processed_dir=settings.STORAGE_PROCESSED_DIR
-        )
-        file_data = await file.read()
-        save_result = file_handler.save_uploaded_file(
-            file_data=file_data,
-            filename=file.filename
-        )
-
-        # 5. 调用处理管道
-        result = pipeline.process_file(
-            file_path=save_result['file_path'],
-            target_fields=target_fields_list,
-            category=category,
-            doc_category=doc_category
-        )
-
-        # 6. 构建响应(确保字段符合Schema定义)
-        return ProcessingResponse(
-            success=True,
-            message="文档处理成功",
-            request_id=f"req_{datetime.now().timestamp()}",
-            document_info=result['document_info'],
-            well_info=result['well_info'],
-            extracted_fields=result['extracted_fields'],
-            validation_results=result['validation_results'],
-            quality_metrics=result['quality_metrics'],
-            processing_info=result['processing_info']
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"处理失败: {str(e)}")
-
-
-# ========== 场景2: 多文档批量信息提取 ==========
-
-@router.post("/extract/batch", response_model=BatchProcessingResponse)
-async def extract_batch_documents(
-    files: List[UploadFile] = File(...),
-    target_fields: str = Form(None),
-    category: str = Form(None),
-    group_by_well: bool = Form(True),
-    pipeline = Depends(get_pipeline)
-):
-    """
-    多文档批量信息提取
-
-    场景2: 多口井混合资料批量处理
-    批量上传文档,返回按井分组结果
-    """
-    try:
-        if len(files) > 100:
-            raise HTTPException(400, "批量处理最多支持100个文件")
-
-        # 解析参数
-        target_fields_list = json.loads(target_fields) if target_fields else None
-
-        # 处理所有文件
-        results = []
-        for file in files:
-            file_data = await file.read()
-            save_result = file_handler.save_uploaded_file(
-                file_data=file_data,
-                filename=file.filename
-            )
-
-            result = pipeline.process_file(
-                file_path=save_result['file_path'],
-                target_fields=target_fields_list,
-                category=category
-            )
-            results.append(result)
-
-        # 按井号分组
-        well_groups = {}
-        for result in results:
-            well_no = result['well_info'].well_no or "未识别"
-            if well_no not in well_groups:
-                well_groups[well_no] = []
-            well_groups[well_no].append(result)
-
-        # 构建响应
-        return BatchProcessingResponse(
-            success=True,
-            message="批量处理完成",
-            batch_info=pipeline.calculate_batch_info(results, well_groups),
-            document_results=results,
-            well_groups=well_groups,
-            summary=pipeline.calculate_summary(results, well_groups)
-        )
-
-    except Exception as e:
-        raise HTTPException(500, f"批量处理失败: {str(e)}")
-
-
-# ========== 场景3: 单井批量资料处理 ==========
-
-@router.post("/extract/single-well-batch", response_model=SingleWellBatchResponse)
-async def extract_single_well_batch(
-    files: List[UploadFile] = File(...),
-    well_no: str = Form(None),
-    target_categories: str = Form(None),
-    pipeline = Depends(get_pipeline)
-):
-    """
-    单井批量资料处理
-
-    场景3: 单口井批量资料一键入库
-    批量上传单井资料,返回完整井信息
-    """
-    try:
-        # 解析目标分类
-        target_categories_list = (
-            json.loads(target_categories) if target_categories else None
-        )
-
-        # 处理所有文档
-        results = []
-        for file in files:
-            file_data = await file.read()
-            save_result = file_handler.save_uploaded_file(
-                file_data=file_data,
-                filename=file.filename
-            )
-
-            result = pipeline.process_file(
-                file_path=save_result['file_path'],
-                target_categories=target_categories_list
-            )
-            results.append(result)
-
-        # 合并字段(跨文档)
-        merged_fields = pipeline.merge_fields_across_documents(results, well_no)
-
-        # 质量汇总
-        quality_summary = pipeline.calculate_quality_summary(results)
-
-        # 校验汇总
-        validation_summary = pipeline.calculate_validation_summary(results)
-
-        # 构建响应
-        return SingleWellBatchResponse(
-            success=True,
-            message="单井资料处理完成",
-            well_info=WellInfo(
-                well_no=well_no,
-                well_no_confidence=max(r['well_info'].well_no_confidence for r in results)
-            ),
-            document_results=results,
-            merged_fields=merged_fields,
-            quality_summary=quality_summary,
-            validation_summary=validation_summary,
-            export_data=ExportData(database_ready=True),
-            processing_info=ProcessingInfo(
-                processing_time_ms=sum(r['processing_info'].processing_time_ms for r in results)
-            )
-        )
-
-    except Exception as e:
-        raise HTTPException(500, f"单井批量处理失败: {str(e)}")
-```
-
-### 11.3 双向校验实现
-
-#### 方向1: 请求参数 → 字段库
-
-```python
-@validator('category')
-def validate_category(cls, v):
-    """校验分类是否在字段库中"""
-    if v is not None:
-        valid_categories = list(FIELD_SCHEMAS.CATEGORY_MAP.keys())
-        if v not in valid_categories:
-            raise ValueError(f"无效的分类: {v}, 支持的分类: {valid_categories}")
-    return v
-
-
-@validator('target_fields')
-def validate_target_fields(cls, v, values):
-    """校验目标字段是否在字段库中"""
-    if v is not None and 'category' in values:
-        category = values['category']
-        valid_fields = FIELD_SCHEMAS.get_field_names(category)
-        invalid_fields = [f for f in v if f not in valid_fields]
-        if invalid_fields:
-            raise ValueError(f"无效的字段: {invalid_fields}")
-    return v
-```
-
-#### 方向2: 响应数据 → 字段库
-
-```python
-@validator('extracted_fields')
-def validate_extracted_fields(cls, v, values):
-    """校验提取的字段是否符合字段库定义"""
-    if 'document_info' in values and values['document_info']:
-        category = values['document_info'].category
-        if category:
-            valid_fields = FIELD_SCHEMAS.get_field_names(category)
-            invalid_fields = [f for f in v.keys() if f not in valid_fields]
-            if invalid_fields:
-                raise ValueError(
-                    f"提取了无效字段: {invalid_fields}。"
-                    f"分类'{category}'支持的字段: {valid_fields}"
-                )
-    return v
-```
-
-#### 方向3: 字段值校验(结合字段定义)
-
-```python
-class FieldValidator:
-    """字段验证器 - 基于字段库定义校验字段值"""
-
-    def validate(self, field_name: str, field_value: Any, category: str):
-        """根据字段库定义验证字段值"""
-        # 获取字段定义
-        field_def = self._get_field_definition(field_name, category)
-
-        if field_def:
-            # 1. 类型校验
-            if field_def.data_type == "date":
-                self._validate_date(field_value)
-            elif field_def.data_type in ["int", "float"]:
-                self._validate_number(field_value, field_def)
-
-            # 2. 范围校验
-            if field_def.min_value is not None:
-                if float(field_value) < field_def.min_value:
-                    raise ValueError(f"值过小: {field_value} < {field_def.min_value}")
-
-            if field_def.max_value is not None:
-                if float(field_value) > field_def.max_value:
-                    raise ValueError(f"值过大: {field_value} > {field_def.max_value}")
-
-            # 3. 必填校验
-            if field_def.required and (field_value is None or field_value == ""):
-                raise ValueError(f"必填字段为空: {field_name}")
-```
-
-### 11.4 测试用例
-
-```python
-import pytest
-from schemas.models import ProcessRequest, ProcessingResponse
-
-def test_validate_category():
-    """测试分类校验"""
-    # 有效分类
-    request = ProcessRequest(category="drilling")
-    assert request.category == "drilling"
-
-    # 无效分类
-    with pytest.raises(ValueError):
-        ProcessRequest(category="invalid_category")
-
-
-def test_validate_target_fields():
-    """测试目标字段校验"""
-    # 有效字段
-    request = ProcessRequest(
-        category="drilling",
-        target_fields=["WellNo", "RigModel", "TotalDepth"]
-    )
-    assert request.target_fields == ["WellNo", "RigModel", "TotalDepth"]
-
-    # 无效字段
-    with pytest.raises(ValueError):
-        ProcessRequest(
-            category="drilling",
-            target_fields=["WellNo", "InvalidField"]
-        )
-
-
-def test_validate_extracted_fields():
-    """测试提取字段校验"""
-    # 有效字段
-    response = ProcessingResponse(
-        success=True,
-        message="OK",
-        document_info={
-            "category": "drilling",
-            "document_id": "doc001"
-        },
-        extracted_fields={
-            "WellNo": {"value": "TS1-1", "confidence": 0.95},
-            "RigModel": {"value": "ZJ50DB", "confidence": 0.85}
-        }
-    )
-
-    # 无效字段
-    with pytest.raises(ValueError):
-        ProcessingResponse(
-            success=True,
-            message="OK",
-            document_info={
-                "category": "drilling",
-                "document_id": "doc001"
-            },
-            extracted_fields={
-                "WellNo": {"value": "TS1-1", "confidence": 0.95},
-                "InvalidField": {"value": "xxx", "confidence": 0.5}
-            }
-        )
-```
-
 ---
 
 **文档结束**
+

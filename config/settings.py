@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     )
 
     # ========== 应用配置 ==========
-    APP_NAME: str = "WellInfo Extractor"
+    APP_NAME: str = "wellie"  # 项目名称，用于URL前缀避免冲突
+    APP_DISPLAY_NAME: str = "WellInfo Extractor"
     APP_VERSION: str = "v1.0.0"
     DEBUG: bool = True  # 启用调试模式
 
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
     CACHE_DIR: str = "./storage/cache"
 
     # ========== API 配置 ==========
-    API_PREFIX: str = "/api/v1"
+    API_PREFIX: str = f"/{APP_NAME}/api/v1"  # 包含项目名称避免冲突
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB

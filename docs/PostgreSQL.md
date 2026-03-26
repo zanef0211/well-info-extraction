@@ -132,3 +132,20 @@ git commit -m "chore: 清理 .workbuddy 目录"
 # 3. 推送
 git push origin master
 ```
+
+## 新增文件的 git 步骤
+```bash
+# 假设您创建了 test.py
+
+# 1. 查看状态
+git status
+
+# 2. 添加文件 git add .
+git add test.py
+
+# 3. 提交
+git commit -m "feat: 添加单元测试脚本"
+
+# 4. 推送
+git push
+```
