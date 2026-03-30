@@ -118,7 +118,7 @@ POST /wellie/api/v1/process/upload
 Content-Type: multipart/form-data
 
 file: [文件]  // 必需
-target_fields: ["WellNo", "SpudDate", "TotalDepth"]  // 可选
+target_fields: ["WellNo", "DocCategory", "Oilfield", "WellType", "SpudDate", "TotalDepth"]  // 可选
 enhance_images: true  // 可选,默认true
 clean_text: true  // 可选,默认true
 ```
